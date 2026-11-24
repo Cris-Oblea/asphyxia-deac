@@ -3,6 +3,7 @@
   records: DB.Find(null, { collection: 'record', name: 'DATA01' })
   events: DB.Find({ collection: 'ir_event' })
   eplays: DB.Find(null, { collection: 'eplay' })
+  schedule: DB.Find({ collection: 'schedule' })
 
 //- helpers:begin
 -
@@ -98,6 +99,9 @@
   var all = {};
   Object.keys(ids).forEach(function (n) { all[n] = 1; });
   Object.keys(ePlays).forEach(function (n) { all[n] = 1; });
+  // the week in progress, from the plugin's schedule (worked out at the core's start): named even before any machine has asked for it
+  var NOW = Date.now(), week = (((schedule || [])[0] || {}).weeks || []).filter(function (w) { return w.from <= NOW && NOW < w.to; })[0];
+  if (week && !events.some(function (e) { return e.id === week.id; })) events.push({ id: week.id, name: week.name, songs: week.songs });
   var latest = events.reduce(function (m, e) { return Math.max(m, e.id || 0); }, 0);
   if (latest) all[latest] = 1;
   var evs = Object.keys(all).map(Number).sort(function (a, b) { return b - a; }).map(function (n) {
@@ -113,6 +117,13 @@
     return s.plays ? fmt(s.score) + " (" + DIFFS[s.diff] + ", " + s.plays + " plays)" : "-";
   };
 
+if week
+  .card
+    .card-content
+      h5.title.is-5.has-text-white This week's songs
+      each s in week.songs
+        p.is-size-5.has-text-white= songName(s)
+      p.has-text-grey-light(style="margin-top:.5rem") Event #{week.id}#{week.name ? ": " + week.name : ""}, until #{new Date(week.to).toISOString().slice(0, 16).replace("T", " ")} UTC. Play these songs in the game during the week to enter its ranking.
 if !evs.length
   .card
     .card-content

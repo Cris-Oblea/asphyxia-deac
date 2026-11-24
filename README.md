@@ -23,7 +23,7 @@ Made for the August 2016 build (`KDM-001-2016080100`); the February 2016 song ta
 ## Installation
 
 1. Copy the `deac@asphyxia` folder into the CORE's `plugins` folder.
-2. Restart the CORE. The plugin shows up as **Dance Evolution Arcade DEAC plugin** in the WebUI.
+2. Restart the CORE. The plugin shows up as **DEAC** in the WebUI's game list, with this repository on its About page.
 3. Set its options in the WebUI if you want to (all have defaults).
 
 ## Options

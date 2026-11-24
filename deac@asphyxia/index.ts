@@ -400,19 +400,31 @@ const getmaster: EPR = async (info, data, send) => {
   });
 };
 // the WebUI's Progress-event page names the event and its songs from what the server holds for the week (all its songs, whichever machine asked)
+function songInfo(build: string, entry: string) {
+  const code = entry.split(":")[0];
+  const r = (SONGS[build] || []).find((r) => r[0] === code);
+  return { code, title: r ? r[1] : code === "yest" ? "YESTERDAY" : code, rom: r ? r[3] : "" };
+}
 async function nameEvent(s1: string, s2: string, build: string) {
   const [id, ...name] = s1.split(",");
-  const songs = s2.split(",").filter(Boolean).slice(0, 2).map((e) => {
-    const code = e.split(":")[0];
-    const r = (SONGS[build] || []).find((r) => r[0] === code);
-    return { code, title: r ? r[1] : code === "yest" ? "YESTERDAY" : code, rom: r ? r[3] : "" };
-  });
+  const songs = s2.split(",").filter(Boolean).slice(0, 2).map((e) => songInfo(build, e));
   await DB.Upsert<any>({ collection: "ir_event", id: parseInt(id, 10) }, { $set: { name: name.join(","), songs } } as any);
+}
+// the WebUI names the week in progress before any machine has asked for it: the rotation's next ten years, worked out at the core's start
+// by the same irRotation the game is answered with (a page cannot run the plugin's code). The operator's fixed event has no weeks: none.
+function schedule(now: number) {
+  const build = "2016080100", { start, span, n } = rotClock(now), out: any[] = [];
+  if (String(U.GetConfig("ir_data_id") || "").trim()) return out;
+  for (let i = Math.max(n, 0); i < Math.max(n, 0) + 520; i++) {
+    const r = irRotation(build, start + i * span);
+    if (r) out.push({ id: r.id, name: r.name, from: start + i * span, to: start + (i + 1) * span, songs: r.songs.split(",").filter(Boolean).map((e) => songInfo(build, e)) });
+  }
+  return out;
 }
 
 export function register() {
   R.GameCode("KDM");
-  R.Contributor("Dance Evolution Arcade DEAC plugin");
+  R.Contributor("Cris-Oblea", "https://github.com/Cris-Oblea/asphyxia-deac"); // the public repo, on the WebUI's About page
   R.Config("event_message", { name: "EVENTMSG", desc: "The event feed, e.g. u:hall,yest/d:hall:text:1. Empty: none.", type: "string", default: "" });
   R.Config("event_message_2", { name: "EVENTMSG strdata2", desc: "The second text of the event feed (read by two functions whose meaning is not resolved). Empty: none.", type: "string", default: "" });
   R.Config("ir_rotation", { name: "Progress events (rotation)", desc: "The Progress events (the week in progress), one at a time: name|song[:letters],song[:letters]/name|... e.g. Week one|hvro:LS,spec:LM/Week two|dind,msou:M. Songs are the 4-letter codes, letters of L S E M $ (none: all five). Empty (default): the plugin picks two songs each period itself, all five difficulties.", type: "string", default: "" });
@@ -424,7 +436,8 @@ export function register() {
   // what the pages derive when drawn (the romanised titles, the song total per build): the plugin's tables, copied where a page can read them
   // one document and one after the other: two writes at the core's start made its database fail to load
   DB.Upsert({ collection: "settings" }, { $set: { backup_key: String(U.GetConfig("backup_key") || "") } } as any).then(() =>
-    DB.Upsert({ collection: "songtable" }, { $set: { builds: Object.fromEntries(Object.keys(SONGS).map((b) => [b, { total: SONG_COUNT_ALL[b], rom: Object.fromEntries(SONGS[b].filter((r) => r[3]).map((r) => [r[0], r[3]])) }])) } } as any));
+    DB.Upsert({ collection: "songtable" }, { $set: { builds: Object.fromEntries(Object.keys(SONGS).map((b) => [b, { total: SONG_COUNT_ALL[b], rom: Object.fromEntries(SONGS[b].filter((r) => r[3]).map((r) => [r[0], r[3]])) }])) } } as any)).then(() =>
+    DB.Upsert({ collection: "schedule" }, { $set: { weeks: schedule(Date.now()) } } as any));
   R.Config("server_name", { name: "Server name", desc: "The name in the footer of the Discord posts. Empty: DEAC.", type: "string", default: "" });
   R.Config("discord_webhook", { name: "Discord webhook URL", desc: "A Discord webhook: a message only when a save makes a new server #1 of a song and difficulty (a first score counts; never a personal best), in the form of a score channel's posts. No message for a guest. Empty: off.", type: "string", default: "" });
   R.Config("discord_close_post", { name: "Discord: post the week's close", desc: "With the webhook set, also post a closed week's champions and the next week's songs. Default off.", type: "boolean", default: false });
