@@ -1,0 +1,115 @@
+//DATA//
+  tables: DB.Find({ collection: 'songtable' })
+  records: DB.Find(refid, { collection: 'record' })
+
+//- helpers:begin
+-
+  var DIFFS = ["Light", "Standard", "Extreme", "Stealth", "Master"];
+  // the game's three marks per song and difficulty, as its music select and difficulty select draw them: PLAY (played it),
+  // CLEAR (passed it: a grade letter), FULL COMBO (passed it with no BOO; the game draws a blue F, with a star when every note was hit, gold when every note was PERFECT)
+  var FULLCOMBOS = ["", "Full combo", "Full combo, every note hit", "Full combo, all PERFECT"];
+  var marksOf = function (s) { var cl = s.grade !== "-"; return { play: s.plays > 0, clear: cl, fc: cl ? s.clear : 0 }; };
+  // the best mark in words (the first one of FULL COMBO, CLEAR, PLAY the entry has)
+  var markOf = function (s) { var m = marksOf(s); return m.fc ? FULLCOMBOS[m.fc] : m.clear ? "Clear" : m.play ? "Play" : "-"; };
+  // how many songs a list of entries has played / cleared / full-combo'd, per difficulty and over the songs (a song counts once, on its best difficulty)
+  var achievementsOf = function (songs) {
+    var per = DIFFS.map(function () { return { play: 0, clear: 0, fc: 0 }; }), any = {}, tot = { play: 0, clear: 0, fc: 0 };
+    songs.forEach(function (s) {
+      var m = marksOf(s), k = s.code || ("row " + s.row), a = any[k] || (any[k] = { play: 0, clear: 0, fc: 0 }), d = per[s.diff];
+      if (m.play) { d.play++; a.play = 1; }
+      if (m.clear) { d.clear++; a.clear = 1; }
+      if (m.fc) { d.fc++; a.fc = 1; }
+    });
+    Object.keys(any).forEach(function (k) { tot.play += any[k].play; tot.clear += any[k].clear; tot.fc += any[k].fc; });
+    return { per: per, tot: tot };
+  };
+  var hex = function (v) { var n = parseInt(v || "0", 16); return isNaN(n) ? 0 : n; };
+  // the game's strings are Shift-JIS bytes kept as latin-1; the plugin runtime's own decoder (U.DecodeString; the page runtime has no TextDecoder codec for it); without it they show as they are
+  var sjis = function (s) { try { return U.DecodeString(Buffer.from(s || "", "latin1"), "shift_jis"); } catch (e) { return s || ""; } };
+  // DATA01's columns: the stored tail is `ver,col0,col1,...` with the game's mask (bits 0-31 all set), so column i is token 1 + i
+  var profileOf = function (doc) {
+    var t = Buffer.from((doc && doc.tail) || "", "base64").toString("latin1").split(","), c = function (i) { return t[1 + i]; };
+    return { level: hex(c(1)), exp: hex(c(2)), credits: hex(c(3)), classIcon: hex(c(4)), irId: hex(c(7)),
+             irA: hex(c(8)), irB: hex(c(9)), irTotal: hex(c(15)), name: sjis(c(24)), area: sjis(c(25)), shop: sjis(c(26)) };
+  };
+  // the class titles, the game's own text `msg_levelname_eng.bin` (`class_names.py --check` compares): the title of class icon c is CLASSES[c >> 1]; the game's art for it is never shipped
+  var CLASSES = ["Nameless Bear", "New Bear", "Front-facing Bear", "Apprentice Bear", "Experienced Bear", "Under The Bridge Bear", "Tent Living Bear", "Great Outdoors Bear", "Survivalist Bear", "Mountaineer Bear", "Tenement Bear", "Cardboard Box Desk Bear", "Teabag-reusing Bear", "Coupon-cutting Bear", "Penny-pinching Bear", "Apartment Bear", "Orange-eating Bear", "Lazy Cushion Bear", "Bear of the Electric Fan", "Lonely Dusk Bear", "Cozy Room Bear", "New Room Bear", "Nice Flooring Bear", "Fashionable Bear", "New Blogger Bear", "Popular Room Bear", "Popular Lighting Bear", "Popular Sofa Bear", "Popular Stereo Bear", "Popular Night View Bear", "Successful Bear", "Open Car in Rain Bear", "Midnight Dandy Bear", "Sunglasses at Night Bear", "New Year Hawaii Bar Bear", "Millionaire Bear", "Celebrity Bear", "Gorgeous Bear", "Luxury Bear", "Fabulous Bear", "Back Alley Bear", "Leather Sofa Bear", "Skyscraper Bear", "Bear Seeking Riches", "Bear With Great Ambition", "Land Owner Bear", "Oil Tycoon Bear", "Elephant Riding Bear", "Castle Building Bear", "The True King Bear", "Bear Of The World", "The One Bear", "Over The Top Bear", "Larger than Life Bear", "Galaxy Emperor Bear", "The God Bear"];
+  // DATA01's ir_slot : best score * 100000 + difficulty of that best * 10000 + plays
+  var irSlot = function (v) { return { score: Math.floor(v / 100000), diff: Math.floor(v / 10000) % 10, plays: v % 10000 }; };
+  // the players of a list of record docs: { refid: { refid, p: profile, songs: [named entries], plays, total, played } }
+  var playersOf = function (records, only) {   // `only`: "kinect" or "camera" keeps only the scores made with that sensor
+    var by = {};
+    records.forEach(function (r) {
+      var id = r.__refid, e = by[id] || (by[id] = { refid: id, p: profileOf(null), songs: [] });
+      if (r.name === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
+      (r.songs || []).forEach(function (s) { if (!only || (s.sensor || "other") === only) e.songs.push(s); });
+    });
+    Object.keys(by).forEach(function (id) {
+      var e = by[id], best = {};
+      e.plays = 0;
+      e.songs.forEach(function (s) { e.plays += s.plays; var k = s.code || ("row " + s.row); best[k] = Math.max(best[k] || 0, s.score); });
+      e.total = Object.keys(best).reduce(function (a, k) { return a + best[k]; }, 0);
+      e.played = Object.keys(best).length;
+    });
+    return by;
+  };
+  // the machine's mark: the sensor a score was made with, and the Song list of the last save. An honour label, not anti-cheat
+  var NOT_OURS = "Not the KDMSENSOR launcher";   // no mark at all: a player's own launcher; `unknown` is the same in older rows
+  var SENSORS = { kinect: "Kinect", camera: "Camera", other: NOT_OURS, unknown: NOT_OURS };
+  var SONGLISTS = { konami: "Konami's", all: "every song unlocked", other: NOT_OURS, unknown: NOT_OURS };
+  var fmt = function (n) { return Number(n).toLocaleString("en-US"); };
+  // a game time (ms since 1970, the e-amusement clock) as UTC text; a value that is not a date shows as it is
+  var when = function (ms) { var d = new Date(ms); return isNaN(d.getTime()) ? String(ms) : d.toISOString().slice(0, 16).replace("T", " ") + " UTC"; };
+  // a song as the game's table has it (the original title, often Japanese) and the romanised / English title of the Song titles mod, `rom`, when it differs
+  // derived when a page is drawn, never read from the record (so records saved before this show right): `songtable` docs, one per build (written by the plugin at the core's start)
+  var ROMS = {}, TOTALS = {};
+  (typeof tables === "undefined" ? [] : tables).forEach(function (t) {
+    Object.keys(t.builds || {}).forEach(function (b) { TOTALS[b] = t.builds[b].total; Object.keys(t.builds[b].rom).forEach(function (c) { ROMS[c] = t.builds[b].rom[c]; }); });
+  });
+  var songName = function (s) { var r = ROMS[s.code]; return r ? s.title + " / " + r : s.title; };
+  var sortName = function (s) { return (ROMS[s.code] || s.title || "").toLowerCase(); };
+//- helpers:end
+
+-
+  var me = playersOf(records)[refid];
+  var rows = me ? me.songs.slice().sort(function (a, b) { return sortName(a) < sortName(b) ? -1 : sortName(a) > sortName(b) ? 1 : a.diff - b.diff; }) : [];
+
+.card
+  .card-header
+    p.card-header-title
+      span.icon
+        i.mdi.mdi-music
+      | &nbsp;Best score per song and difficulty (#{rows.length})
+  .card-content(style="overflow-x:auto")
+    if !rows.length
+      p.has-text-grey-light No song played yet.
+    else
+      p.has-text-grey-light Play, Clear and Full combo are the game's own marks (its difficulty select shows the same three): played it, passed it, passed it with no BOO (the game draws a star on the F when every note was hit, gold when every note was PERFECT). The titles are the ones of the game build that saved the record. The sensor is the one the machine used when the score was made (the launcher tells the server; an honour label).
+      table.table.is-fullwidth.is-hoverable.is-striped
+        thead
+          tr
+            th Song
+            th Difficulty
+            th Best score
+            th Max combo
+            th Plays
+            th Grade
+            th Play
+            th Clear
+            th Full combo
+            th Sensor
+        tbody
+          each r in rows
+            tr
+              td #{songName(r)} (#{r.code || "row " + r.row})
+              td= DIFFS[r.diff]
+              td
+                strong= fmt(r.score)
+              td= r.combo
+              td= r.plays
+              td= r.grade
+              - var m = marksOf(r)
+              td= m.play ? "Play" : "-"
+              td= m.clear ? "Clear" : "-"
+              td= m.fc ? FULLCOMBOS[m.fc] : "-"
+              td= SENSORS[r.sensor || "other"]

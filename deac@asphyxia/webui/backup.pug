@@ -1,0 +1,38 @@
+//DATA//
+  players: DB.Find(null, {})
+  shared: DB.Find({})
+  settings: DB.Find({ collection: 'settings' })
+
+-
+  // every document the plugin keeps, as stored: the players' (each with its `__refid`) and the server's own (eventlog rows, ranking events). The core's own
+  // `core.db` (the accounts) is not here. A page cannot tell who is signed in (only a profile page gets isAdmin), so the operator's gate is the plugin option
+  // `backup_key`: the page is opened as .../backup?key=<that key>; with no key set, or another one, nothing is put in the page
+  var secret = String((settings[0] || {}).backup_key || '');
+  var allowed = secret !== '' && query && query.key === secret;
+  shared = shared.filter(function (d) { return d.collection !== 'settings'; }); // the key itself stays out of the file
+  var dump = { format: 'deac-database', version: 1, exported: new Date().toISOString(), players: players, shared: shared };
+  var json = allowed ? JSON.stringify(dump).replace(/</g, '\\u003c') : 'null';
+
+.card
+  .card-header
+    p.card-header-title
+      span.icon
+        i.mdi.mdi-database-export
+      | &nbsp;Download the plugin's database
+  .card-content
+    if allowed
+      p.has-text-grey-light #{players.length} player documents and #{shared.length} of the server's own (the game's event log, the ranking events), as one file. A copy of #[code savedata/deac@asphyxia.db] beside the core's executable holds the same.
+      br
+      a.button.is-link#deac-backup Download the database
+    else
+      p.has-text-grey-light For the server's operator: set the plugin option "Backup key" (core WebUI, or #[code backup_key] in #[code config.ini] under #[code [deac@asphyxia]]), then open this page as #[code backup?key=&lt;the key&gt;].
+
+if allowed
+  script.
+    var DATABASE = !{json};
+    document.getElementById('deac-backup').addEventListener('click', function () {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(DATABASE)], { type: 'application/json' }));
+      a.download = 'deac-database-' + DATABASE.exported.slice(0, 10).replace(/-/g, '') + '.json';
+      a.click();
+    });

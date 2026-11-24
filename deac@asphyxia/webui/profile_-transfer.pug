@@ -1,0 +1,164 @@
+//DATA//
+  tables: DB.Find({ collection: 'songtable' })
+  records: DB.Find(refid, { collection: 'record' })
+  notes: DB.Find(refid, { collection: 'import' })
+
+//- helpers:begin
+-
+  var DIFFS = ["Light", "Standard", "Extreme", "Stealth", "Master"];
+  // the game's three marks per song and difficulty, as its music select and difficulty select draw them: PLAY (played it),
+  // CLEAR (passed it: a grade letter), FULL COMBO (passed it with no BOO; the game draws a blue F, with a star when every note was hit, gold when every note was PERFECT)
+  var FULLCOMBOS = ["", "Full combo", "Full combo, every note hit", "Full combo, all PERFECT"];
+  var marksOf = function (s) { var cl = s.grade !== "-"; return { play: s.plays > 0, clear: cl, fc: cl ? s.clear : 0 }; };
+  // the best mark in words (the first one of FULL COMBO, CLEAR, PLAY the entry has)
+  var markOf = function (s) { var m = marksOf(s); return m.fc ? FULLCOMBOS[m.fc] : m.clear ? "Clear" : m.play ? "Play" : "-"; };
+  // how many songs a list of entries has played / cleared / full-combo'd, per difficulty and over the songs (a song counts once, on its best difficulty)
+  var achievementsOf = function (songs) {
+    var per = DIFFS.map(function () { return { play: 0, clear: 0, fc: 0 }; }), any = {}, tot = { play: 0, clear: 0, fc: 0 };
+    songs.forEach(function (s) {
+      var m = marksOf(s), k = s.code || ("row " + s.row), a = any[k] || (any[k] = { play: 0, clear: 0, fc: 0 }), d = per[s.diff];
+      if (m.play) { d.play++; a.play = 1; }
+      if (m.clear) { d.clear++; a.clear = 1; }
+      if (m.fc) { d.fc++; a.fc = 1; }
+    });
+    Object.keys(any).forEach(function (k) { tot.play += any[k].play; tot.clear += any[k].clear; tot.fc += any[k].fc; });
+    return { per: per, tot: tot };
+  };
+  var hex = function (v) { var n = parseInt(v || "0", 16); return isNaN(n) ? 0 : n; };
+  // the game's strings are Shift-JIS bytes kept as latin-1; the plugin runtime's own decoder (U.DecodeString; the page runtime has no TextDecoder codec for it); without it they show as they are
+  var sjis = function (s) { try { return U.DecodeString(Buffer.from(s || "", "latin1"), "shift_jis"); } catch (e) { return s || ""; } };
+  // DATA01's columns: the stored tail is `ver,col0,col1,...` with the game's mask (bits 0-31 all set), so column i is token 1 + i
+  var profileOf = function (doc) {
+    var t = Buffer.from((doc && doc.tail) || "", "base64").toString("latin1").split(","), c = function (i) { return t[1 + i]; };
+    return { level: hex(c(1)), exp: hex(c(2)), credits: hex(c(3)), classIcon: hex(c(4)), irId: hex(c(7)),
+             irA: hex(c(8)), irB: hex(c(9)), irTotal: hex(c(15)), name: sjis(c(24)), area: sjis(c(25)), shop: sjis(c(26)) };
+  };
+  // the class titles, the game's own text `msg_levelname_eng.bin` (`class_names.py --check` compares): the title of class icon c is CLASSES[c >> 1]; the game's art for it is never shipped
+  var CLASSES = ["Nameless Bear", "New Bear", "Front-facing Bear", "Apprentice Bear", "Experienced Bear", "Under The Bridge Bear", "Tent Living Bear", "Great Outdoors Bear", "Survivalist Bear", "Mountaineer Bear", "Tenement Bear", "Cardboard Box Desk Bear", "Teabag-reusing Bear", "Coupon-cutting Bear", "Penny-pinching Bear", "Apartment Bear", "Orange-eating Bear", "Lazy Cushion Bear", "Bear of the Electric Fan", "Lonely Dusk Bear", "Cozy Room Bear", "New Room Bear", "Nice Flooring Bear", "Fashionable Bear", "New Blogger Bear", "Popular Room Bear", "Popular Lighting Bear", "Popular Sofa Bear", "Popular Stereo Bear", "Popular Night View Bear", "Successful Bear", "Open Car in Rain Bear", "Midnight Dandy Bear", "Sunglasses at Night Bear", "New Year Hawaii Bar Bear", "Millionaire Bear", "Celebrity Bear", "Gorgeous Bear", "Luxury Bear", "Fabulous Bear", "Back Alley Bear", "Leather Sofa Bear", "Skyscraper Bear", "Bear Seeking Riches", "Bear With Great Ambition", "Land Owner Bear", "Oil Tycoon Bear", "Elephant Riding Bear", "Castle Building Bear", "The True King Bear", "Bear Of The World", "The One Bear", "Over The Top Bear", "Larger than Life Bear", "Galaxy Emperor Bear", "The God Bear"];
+  // DATA01's ir_slot : best score * 100000 + difficulty of that best * 10000 + plays
+  var irSlot = function (v) { return { score: Math.floor(v / 100000), diff: Math.floor(v / 10000) % 10, plays: v % 10000 }; };
+  // the players of a list of record docs: { refid: { refid, p: profile, songs: [named entries], plays, total, played } }
+  var playersOf = function (records, only) {   // `only`: "kinect" or "camera" keeps only the scores made with that sensor
+    var by = {};
+    records.forEach(function (r) {
+      var id = r.__refid, e = by[id] || (by[id] = { refid: id, p: profileOf(null), songs: [] });
+      if (r.name === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
+      (r.songs || []).forEach(function (s) { if (!only || (s.sensor || "other") === only) e.songs.push(s); });
+    });
+    Object.keys(by).forEach(function (id) {
+      var e = by[id], best = {};
+      e.plays = 0;
+      e.songs.forEach(function (s) { e.plays += s.plays; var k = s.code || ("row " + s.row); best[k] = Math.max(best[k] || 0, s.score); });
+      e.total = Object.keys(best).reduce(function (a, k) { return a + best[k]; }, 0);
+      e.played = Object.keys(best).length;
+    });
+    return by;
+  };
+  // the machine's mark: the sensor a score was made with, and the Song list of the last save. An honour label, not anti-cheat
+  var NOT_OURS = "Not the KDMSENSOR launcher";   // no mark at all: a player's own launcher; `unknown` is the same in older rows
+  var SENSORS = { kinect: "Kinect", camera: "Camera", other: NOT_OURS, unknown: NOT_OURS };
+  var SONGLISTS = { konami: "Konami's", all: "every song unlocked", other: NOT_OURS, unknown: NOT_OURS };
+  var fmt = function (n) { return Number(n).toLocaleString("en-US"); };
+  // a game time (ms since 1970, the e-amusement clock) as UTC text; a value that is not a date shows as it is
+  var when = function (ms) { var d = new Date(ms); return isNaN(d.getTime()) ? String(ms) : d.toISOString().slice(0, 16).replace("T", " ") + " UTC"; };
+  // a song as the game's table has it (the original title, often Japanese) and the romanised / English title of the Song titles mod, `rom`, when it differs
+  // derived when a page is drawn, never read from the record (so records saved before this show right): `songtable` docs, one per build (written by the plugin at the core's start)
+  var ROMS = {}, TOTALS = {};
+  (typeof tables === "undefined" ? [] : tables).forEach(function (t) {
+    Object.keys(t.builds || {}).forEach(function (b) { TOTALS[b] = t.builds[b].total; Object.keys(t.builds[b].rom).forEach(function (c) { ROMS[c] = t.builds[b].rom[c]; }); });
+  });
+  var songName = function (s) { var r = ROMS[s.code]; return r ? s.title + " / " + r : s.title; };
+  var sortName = function (s) { return (ROMS[s.code] || s.title || "").toLowerCase(); };
+//- helpers:end
+
+-
+  // the profile file: the card's records as stored, plus the sensor / shop tags the WebUI shows (the rest is derived again on import)
+  var me = playersOf(records)[refid];
+  var note = notes && notes[0];
+  var file = { format: 'deac-profile', version: 1, refid: refid, exported: new Date().toISOString(), records: records.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; }).map(function (r) {
+    var o = { name: r.name, dataid: r.dataid, tail: r.tail, bin: r.bin || '', build: r.build || '', sensor: r.sensor, songlist: r.songlist };
+    if (r.songs) o.songs = r.songs.map(function (s) { return [s.row, s.diff, s.score, s.sensor]; });
+    if (r.history) o.history = r.history.map(function (h) { return [h.time, h.score, h.row, h.sensor, h.shop]; });
+    return o;
+  }) };
+  var json = JSON.stringify(file).replace(/</g, '\\u003c');
+
+.card
+  .card-header
+    p.card-header-title
+      span.icon
+        i.mdi.mdi-database-export
+      | &nbsp;Export this profile
+  .card-content
+    if !me || !records.some(function (r) { return r.name === "DATA01"; })
+      p.has-text-grey-light No records yet: the game has not saved a credit for this card.
+    else
+      p.has-text-grey-light #{records.length} records (the profile, every score, the play history) as one file. Import it into another card, or into another server running this plugin, to carry the profile over.
+      br
+      a.button.is-link#deac-export Download the profile file
+
+.card
+  .card-header
+    p.card-header-title
+      span.icon
+        i.mdi.mdi-database-import
+      | &nbsp;Import a profile file
+  .card-content
+    #deac-import-box
+      p.has-text-grey-light The card's records are replaced by the file's: the game's next load returns them as they were saved. Nothing is changed when the file is refused.
+      br
+      .file.has-name
+        label.file-label
+          input.file-input#deac-file(type="file" accept=".json,application/json")
+          span.file-cta
+            span.file-label Choose a profile file...
+          span.file-name#deac-file-name No file chosen
+      p#deac-preview.has-text-grey(style="margin-top:.5rem")
+      br
+      a.button.is-danger#deac-import(disabled) Import into this card
+    if note
+      if note.error
+        .notification.is-danger.is-light#deac-note(style="margin-top:1rem") The last import was refused: #{note.error}
+      else
+        .notification.is-success.is-light#deac-note(style="margin-top:1rem") The last import put #{note.records} records on this card (#{when(note.time)}).
+
+script.
+  var PROFILE = !{json};
+  document.addEventListener('DOMContentLoaded', function () {
+    var mayImport = typeof canEdit === 'undefined' || canEdit;
+    var parsed = null;
+    var exp = document.getElementById('deac-export');
+    if (exp) exp.addEventListener('click', function () {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(PROFILE)], { type: 'application/json' }));
+      a.download = 'deac-profile-' + refid + '-' + PROFILE.exported.slice(0, 10).replace(/-/g, '') + '.json';
+      a.click();
+    });
+    if (!mayImport) document.getElementById('deac-import-box').innerHTML = '<p class="has-text-grey-light">A profile can only be imported into your own card.</p>';
+    else {
+      var btn = document.getElementById('deac-import');
+      document.getElementById('deac-file').addEventListener('change', function (ev) {
+        var f = ev.target.files[0], pre = document.getElementById('deac-preview');
+        parsed = null;
+        btn.setAttribute('disabled', '');
+        document.getElementById('deac-file-name').textContent = f ? f.name : 'No file chosen';
+        if (!f) return;
+        f.text().then(function (text) {
+          var j = JSON.parse(text);
+          if (!j || j.format !== 'deac-profile' || j.version !== 1 || !Array.isArray(j.records)) throw new Error('not a DEAC profile file');
+          var d1 = j.records.filter(function (r) { return r.name === 'DATA01'; })[0];
+          var cols = d1 ? atob(d1.tail).split(',') : [];
+          var name = cols[1 + 24] ? new TextDecoder('shift_jis').decode(Uint8Array.from(cols[1 + 24], function (c) { return c.charCodeAt(0); })) : '(no profile record)';
+          pre.textContent = name + ', level ' + (parseInt(cols[1 + 1] || '0', 16) || 0) + ', ' + j.records.length + ' records, build ' + ((j.records[0] || {}).build || 'unknown');
+          parsed = j;
+          btn.removeAttribute('disabled');
+        }).catch(function (e) { pre.textContent = 'This file is not a DEAC profile file (' + e.message + ').'; });
+      });
+      btn.addEventListener('click', function () {
+        if (!parsed) return;
+        if (PROFILE.records.length && !confirm('This card already has records: the file replaces all of them. Continue?')) return;
+        emit('importRecords', { refid: refid, file: parsed }).then(function () { location.reload(); });
+      });
+    }
+
+  });
