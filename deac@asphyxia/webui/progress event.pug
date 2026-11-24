@@ -123,7 +123,7 @@ if week
       h5.title.is-5.has-text-white This week's songs
       each s in week.songs
         p.is-size-5.has-text-white= songName(s)
-      p.has-text-grey-light(style="margin-top:.5rem") Event #{week.id}#{week.name ? ": " + week.name : ""}, until #{new Date(week.to).toISOString().slice(0, 16).replace("T", " ")} UTC. Play these songs in the game during the week to enter its ranking.
+      p.has-text-grey-light(style="margin-top:.5rem") #{week.name || "Event " + week.id}, until #{new Date(week.to).toISOString().slice(0, 16).replace("T", " ")} UTC. Play these songs in the game during the week to enter its ranking.
 if !evs.length
   .card
     .card-content
@@ -143,7 +143,7 @@ each ev in evs
       p.card-header-title
         span.icon
           i.mdi.mdi-podium
-        | &nbsp;Event #{ev.id}#{ev.info.name ? ": " + ev.info.name : ""}
+        | &nbsp;#{ev.info.name || "Event " + ev.id}
     .card-content(style="overflow-x:auto")
       h5.title.is-5.has-text-white This week's ranking per song and difficulty
       p.has-text-grey-light The Progress event is the week in progress: its songs are played by everybody, and when the week ends its results move to the Hall of fame page. Every play of the event's songs during its week, each player's best on each difficulty. A play counts in the week it was danced in; the sensor is the one the machine told the server it used (an honour label).

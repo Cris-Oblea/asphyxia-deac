@@ -245,9 +245,9 @@ async function announceClose(hall: any, now: number) {
   const lines = hall.views.all.map((b: any) => `**${b.title}** (${DIFF_NAMES[b.diff]}): ${names(b.top)}, ${b.top[0].score.toLocaleString("en-US")}`);
   if (hall.overall.length) lines.push(`The game's ranking: ${names(hall.overall)}, ${hall.overall[0].score.toLocaleString("en-US")}`);
   if (!lines.length) return;
-  const embeds: any[] = [{ title: `Week closed: event ${hall.id}${hall.name ? ` (${hall.name})` : ""}`, color: 0x2ecc71, timestamp: new Date().toISOString(), description: lines.join("\n").slice(0, 4000) }];
+  const embeds: any[] = [{ title: `Week closed: ${hall.name || "event " + hall.id}`, color: 0x2ecc71, timestamp: new Date().toISOString(), description: lines.join("\n").slice(0, 4000) }];
   const next = irRotation(hall.build, now);
-  if (next) embeds.push({ title: "This week's songs", color: 0x3498db, description: `Event ${next.id}${next.name ? ` (${next.name})` : ""}: ` + next.songs.split(",").map((e) => {
+  if (next) embeds.push({ title: "This week's songs", color: 0x3498db, description: `${next.name || "Event " + next.id}: ` + next.songs.split(",").map((e) => {
     const code = e.split(":")[0];
     return ((SONGS[hall.build] || []).find((r) => r[0] === code) || ["", code === "yest" ? "YESTERDAY" : code])[1];
   }).join(", ") });

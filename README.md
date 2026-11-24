@@ -22,9 +22,19 @@ Made for the August 2016 build (`KDM-001-2016080100`); the February 2016 song ta
 
 ## Installation
 
-1. Copy the `deac@asphyxia` folder into the CORE's `plugins` folder.
-2. Restart the CORE. The plugin shows up as **DEAC** in the WebUI's game list, with this repository on its About page.
-3. Set its options in the WebUI if you want to (all have defaults).
+1. Download `asphyxia-deac-x.y.z.zip` from the [latest release](https://github.com/Cris-Oblea/asphyxia-deac/releases/latest) and extract it.
+2. Copy the `deac@asphyxia` folder into the CORE's `plugins` folder.
+3. Restart the CORE. The plugin shows up as **DEAC** in the WebUI's game list (the WebUI is the address the CORE shows when it starts; on the same PC, by default `http://localhost:8083`).
+4. Set its options in the WebUI if you want to (all have defaults; see [Options](#options)).
+
+## Using it
+
+- **Connect the game.** In the launcher's *spice2x settings...*, Options tab, set the e-amusement URL to the CORE's address (`http://localhost:8083` on the same PC, `http://<the server's IP>:8083` from another one). Play with a card: everything saved goes to that card.
+- **Players' pages.** Each player signs up in the CORE's WebUI with their card and finds their profile under **DEAC**: Details, Scores, Achievements, History, Rivals and Transfer. The plugin's own pages in the sidebar (Progress event, Hall of fame, All-time rankings) are open to everyone.
+- **Progress events.** Nothing to do: each week the plugin picks two songs and the game shows them as its ranking event. To choose the songs yourself, fill *Progress events (rotation)*. When a week closes, its winners go to the Hall of fame with their trophies.
+- **Discord.** In your Discord server: *Server Settings > Integrations > Webhooks > New Webhook*, pick the channel, *Copy Webhook URL*. Paste it into the *Discord webhook URL* option and set *Server name* to how the posts should sign. From then on, each new #1 of a song and difficulty is posted there; turn on *Discord: post the week's close* to post each week's champions and next week's songs too.
+- **Moving a profile.** On the profile's Transfer tab, download the card's records as a file; on the other server (or another card), sign in to the new card and import that file. Importing replaces that card's records.
+- **Backup.** Set a *Backup key*, then open `http://<CORE>/plugin/deac@asphyxia/backup?key=<your key>` to download the whole database. With no key it stays closed.
 
 ## Options
 
@@ -39,7 +49,7 @@ Made for the August 2016 build (`KDM-001-2016080100`); the February 2016 song ta
 | Server name | The name in the footer of the Discord posts (default "DEAC"). |
 | Discord webhook URL | Where the new #1 messages go. Empty: off. |
 | Discord: post the week's close | Also post each closed week's champions and next week's songs. |
-| Backup key | Opens the database download at `deac@asphyxia/backup?key=<key>`. Empty: off. |
+| Backup key | Opens the database download at `/plugin/deac@asphyxia/backup?key=<key>`. Empty: off. |
 | Log every call | One line per save or load in the CORE's log, for testing. |
 
 ## What this repository never contains

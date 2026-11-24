@@ -95,7 +95,7 @@ each h in list
       p.card-header-title
         span.icon
           i.mdi.mdi-trophy
-        | &nbsp;Event #{h.id}#{h.name ? ": " + h.name : ""}, closed #{when(h.closed)}
+        | &nbsp;#{h.name || "Event " + h.id}, closed #{when(h.closed)}
     .card-content(style="overflow-x:auto")
       p.has-text-grey-light Songs: #{h.songs.map(function (s) { return songName(s) + " (" + s.code + ")"; }).join(", ")}. A tie shares its place.
       each v, vi in VIEWS
