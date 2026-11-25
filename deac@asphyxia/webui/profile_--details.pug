@@ -41,7 +41,7 @@
     var by = {};
     records.forEach(function (r) {
       var id = r.__refid, e = by[id] || (by[id] = { refid: id, p: profileOf(null), songs: [] });
-      if (r.name === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
+      if (r.rec === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
       (r.songs || []).forEach(function (s) { if (!only || (s.sensor || "other") === only) e.songs.push(s); });
     });
     Object.keys(by).forEach(function (id) {
@@ -81,12 +81,12 @@
         i.mdi.mdi-account
       | &nbsp;Profile
   .card-content
-    if !me || !records.some(function (r) { return r.name === "DATA01"; })
+    if !me || !records.some(function (r) { return r.rec === "DATA01"; })
       p.has-text-grey-light No records yet: the game has not saved a credit for this card.
     else
       -
         var rows = [
-          ["Name", me.p.name, "The name the game saved for this card."],
+          ["Name", me.p.name, "The name the game shows for this card; it can be changed below."],
           ["Level", me.p.level, "Made from the points: the more points, the higher the level."],
           ["Class title", CLASSES[Math.min(me.p.classIcon, 110) >> 1], "The title the game gives this level, in its own words (two levels to a title)."],
           ["Points", fmt(me.p.exp), "Experience points: every credit adds some."],
@@ -106,6 +106,23 @@
               td= r[1]
               td.has-text-grey-light= r[2]
 
+if me && records.some(function (r) { return r.rec === "DATA01"; })
+  .card
+    .card-header
+      p.card-header-title
+        span.icon
+          i.mdi.mdi-rename-box
+        | &nbsp;Change the name
+    .card-content
+      p.has-text-grey-light Up to 10 characters the game's name entry has: letters, digits, . , ; : @, hiragana, katakana, ー and spaces (letters and digits are shown full width, as the game draws them). The game shows the new name from the next card-in, and every page here shows it at once.
+      br
+      .field.has-addons
+        .control
+          input.input#deac-name(type="text", maxlength="10", value=me.p.name)
+        .control
+          a.button.is-link#deac-rename Change the name
+      p#deac-rename-result.has-text-grey(style="margin-top:.5rem")
+
 .card
   .card-header
     p.card-header-title
@@ -119,6 +136,18 @@
     p#deac-delete-result.has-text-grey(style="margin-top:.5rem")
 
 script.
+  var rename = document.getElementById('deac-rename');
+  if (rename) {
+    var field = document.getElementById('deac-name'), was = null;
+    try { was = sessionStorage.getItem('deac-rename'); sessionStorage.removeItem('deac-rename'); } catch (e) {}
+    // the event answers nothing: a name still the one before the click was refused
+    if (was !== null && was === field.value) document.getElementById('deac-rename-result').textContent = 'Not changed: the same name, or one the game\'s name entry cannot write (see the characters above).';
+    rename.addEventListener('click', function () {
+      if (field.value === field.defaultValue) return;
+      try { sessionStorage.setItem('deac-rename', field.defaultValue); } catch (e) {}
+      emit('renameProfile', { refid: refid, name: field.value }).then(function () { location.reload(); });
+    });
+  }
   document.getElementById('deac-delete').addEventListener('click', function () {
     if (!confirm('Delete every record of this player? This cannot be undone.')) return;
     emit('deleteRecords', { refid: refid }).then(function () { location.reload(); });

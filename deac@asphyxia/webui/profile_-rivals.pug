@@ -42,7 +42,7 @@
     var by = {};
     records.forEach(function (r) {
       var id = r.__refid, e = by[id] || (by[id] = { refid: id, p: profileOf(null), songs: [] });
-      if (r.name === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
+      if (r.rec === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
       (r.songs || []).forEach(function (s) { if (!only || (s.sensor || "other") === only) e.songs.push(s); });
     });
     Object.keys(by).forEach(function (id) {

@@ -41,7 +41,7 @@
     var by = {};
     records.forEach(function (r) {
       var id = r.__refid, e = by[id] || (by[id] = { refid: id, p: profileOf(null), songs: [] });
-      if (r.name === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
+      if (r.rec === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
       (r.songs || []).forEach(function (s) { if (!only || (s.sensor || "other") === only) e.songs.push(s); });
     });
     Object.keys(by).forEach(function (id) {
@@ -84,7 +84,7 @@
         i.mdi.mdi-medal
       | &nbsp;Achievements: the game's play, clear and full combo marks
   .card-content(style="overflow-x:auto")
-    if !records.some(function (r) { return r.name === "DATA01"; })
+    if !records.some(function (r) { return r.rec === "DATA01"; })
       p.has-text-grey-light No records yet: the game has not saved a credit for this card.
     else
       p.has-text-grey-light The three marks the game shows for each song and difficulty in its music select and difficulty select: Play (played it), Clear (passed it), Full combo (passed it with no BOO). A song counts once in the first row, on its best difficulty. The sensor is the one the machine told the server it used when each best score was made (an honour label). The build's songs are the ones a player can play in the build that saved the record (shown once the game has saved a credit with this server version).

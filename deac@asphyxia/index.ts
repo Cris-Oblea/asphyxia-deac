@@ -5,7 +5,7 @@ import * as http from "http";
 import * as https from "https";
 import { SONGS, SONG_COUNT_ALL, EVENT_SONGS } from "./data/songs";
 
-type Rec = { collection: "record"; dataid: string; name: string; tail: string; bin?: string; build: string; pcbid?: string; sensor?: string; songlist?: string; songtotal?: number; songs?: any[]; shop?: string; history?: any[] };
+type Rec = { collection: "record"; dataid: string; rec: string; name?: string; tail: string; bin?: string; build: string; pcbid?: string; sensor?: string; songlist?: string; songtotal?: number; songs?: any[]; shop?: string; history?: any[] };
 
 const ok = () => ({ result: K.ITEM("s32", 0) });
 const log = (...a: any[]) => { if (U.GetConfig("log_calls")) console.log("[deac]", ...a); }; // the operator's option, for a test run
@@ -56,7 +56,7 @@ function historyOf(sent: Buffer, build: string, sensor: string, shop: string, pr
 
 // what the WebUI reads from a record, derived from its bin: DATA01's song total and shop, the played songs, the history; `prev` is the stored record this one replaces
 function derive(doc: Partial<Rec>, name: string, bin: string, build: string, sensor: string, shop: string, prev?: Rec | null) {
-  if (name === "DATA01") { doc.songtotal = SONG_COUNT_ALL[build || ""]; doc.shop = shop; }   // the total is always the build's with the mod's songs, whatever Song list the machine shows
+  if (name === "DATA01") { doc.songtotal = SONG_COUNT_ALL[build || ""]; doc.shop = shop; doc.name = sjis(colsOf(doc.tail || "")[1 + 24]); }   // the total is always the build's with the mod's songs, whatever Song list the machine shows; `name`: the player's, for the core's own pages
   if (name === "RDAT01" && bin) doc.history = historyOf(Buffer.from(bin, "base64"), build, sensor, shop, prev?.history);
   if (name in SONG_RECORDS && bin) doc.songs = songsOf(name, Buffer.from(bin, "base64"), build, sensor, prev?.songs);
 }
@@ -89,7 +89,7 @@ function readProfile(file: any, refid: string): { error: string } | { docs: Part
     const id = dataid.startsWith(file.refid) ? refid + dataid.slice(file.refid.length) : dataid;
     if (seen.has(name + id)) return bad(`${name} is in the file twice`);
     seen.add(name + id);
-    const doc: Partial<Rec> = { tail, bin, build, dataid: id, name, pcbid: "", sensor: tagOf(r.sensor), songlist: r.songlist === "konami" || r.songlist === "all" ? r.songlist : "other" };
+    const doc: Partial<Rec> = { tail, bin, build, dataid: id, rec: name, pcbid: "", sensor: tagOf(r.sensor), songlist: r.songlist === "konami" || r.songlist === "all" ? r.songlist : "other" };
     const arr = (v: any) => (Array.isArray(v) ? v.filter(Array.isArray) : []);
     derive(doc, name, bin, build, "other", shop, {
       songs: arr(r.songs).map((a: any[]) => ({ row: a[0], diff: a[1], score: a[2], sensor: tagOf(a[3]) })),
@@ -104,6 +104,16 @@ function readProfile(file: any, refid: string): { error: string } | { docs: Part
 const DIFF_NAMES = ["Light", "Standard", "Extreme", "Stealth", "Master"];
 const sjis = (s: string) => { try { return U.DecodeString(Buffer.from(s || "", "latin1"), "shift_jis"); } catch { return s || ""; } };
 const hexCol = (t: string[], i: number) => parseInt(t[i] || "0", 16) || 0;
+// The game's name entry: 10 slots, each a full-width key of its three boards (Ａ-Ｚ ａ-ｚ ０-９ ．，；：＠,
+// hiragana, katakana, ー) or an ASCII space, trailing spaces dropped. Typed ASCII letters, digits and . , ; : @ become their full-width keys.
+// Returns the Shift-JIS bytes as latin-1 (the stored tail's form), or "" when the game could not have entered it.
+const NAME_KEY = /^[Ａ-Ｚａ-ｚ０-９．，；：＠ぁ-わをんァ-ワヲ-ヴー ]$/;
+function nameBytes(name: unknown) {
+  if (typeof name !== "string") return "";
+  const chars = Array.from(name.replace(/[A-Za-z0-9.,;:@]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0)).trimEnd());
+  if (!chars.length || chars.length > 10 || !chars.every((c) => NAME_KEY.test(c))) return "";
+  return U.EncodeString(chars.join(""), "shift_jis").toString("latin1");
+}
 const colsOf = (tail: string) => Buffer.from(tail || "", "base64").toString("latin1").split(","); // a stored tail: `ver,col0,col1,...`, column i is token 1 + i
 function post(url: string, body: any) {
   return new Promise<void>((resolve) => {
@@ -127,7 +137,7 @@ function chartTop(rows: Rec[], build: string, row: number, diff: number) {
   for (const r of rows) if (r.build === build) for (const p of r.songs || []) if (p.row === row && p.diff === diff && p.score > 0 && (!top || beats(p, top.e))) top = { e: p, refid: (r as any).__refid };
   return top;
 }
-const cardName = async (refid: string) => { const r = await DB.FindOne<Rec>(refid, { collection: "record", name: "DATA01" }); return r ? sjis(colsOf(r.tail)[1 + 24]) || "A player" : "A player"; };
+const cardName = async (refid: string) => { const r = await DB.FindOne<Rec>(refid, { collection: "record", rec: "DATA01" }); return r ? sjis(colsOf(r.tail)[1 + 24]) || "A player" : "A player"; };
 const comma = (n: number) => n.toLocaleString("en-US");
 
 // ---- the Progress events: IRDATA, one event at a time, a new id for each ----
@@ -211,7 +221,7 @@ function podium<T extends { score: number }>(rows: T[], tie: (r: T) => number = 
 }
 async function closeEvent(id: number, now: number) {
   const plays = await DB.Find<any>(null, { collection: "eplay", event: id } as any);
-  const cards = await DB.Find<Rec>(null, { collection: "record", name: "DATA01" } as any);
+  const cards = await DB.Find<Rec>(null, { collection: "record", rec: "DATA01" } as any);
   const named = new Map(cards.map((r) => [(r as any).__refid, sjis(colsOf(r.tail)[1 + 24])] as [string, string]));
   const nameOf = (refid: string) => named.get(refid) || refid.slice(0, 8);
   const info = await DB.FindOne<any>({ collection: "ir_event", id } as any);
@@ -263,7 +273,7 @@ function closeDue(now: number) {
     if (n < 1) return;
     const seen = new Set<number>();
     for (const p of await DB.Find<any>(null, { collection: "eplay" } as any)) seen.add(p.event);
-    for (const r of await DB.Find<Rec>(null, { collection: "record", name: "DATA01" } as any)) seen.add(hexCol(colsOf(r.tail), 1 + 7));
+    for (const r of await DB.Find<Rec>(null, { collection: "record", rec: "DATA01" } as any)) seen.add(hexCol(colsOf(r.tail), 1 + 7));
     const done = new Set((await DB.Find<any>({ collection: "hall" } as any)).map((h: any) => h.id));
     for (const id of Array.from(seen).filter((i) => i >= 1 && now >= start + i * span + grace && !done.has(i)).sort((a, b) => a - b)) {
       const hall = await closeEvent(id, now);
@@ -290,9 +300,10 @@ function markOf(info: EamuseInfo) {
 
 const refidOf = (data: any) => $(data).str("data.refid", "");
 const dataidOf = (data: any) => $(data).str("data.dataid", refidOf(data));
-const find = (data: any, name: string) => DB.FindOne<Rec>(refidOf(data), { collection: "record", dataid: dataidOf(data), name });
+const find = (data: any, name: string) => DB.FindOne<Rec>(refidOf(data), { collection: "record", dataid: dataidOf(data), rec: name });
 
 const usergamedata_send: EPR = async (info, data, send) => {
+  await ready;
   const refid = refidOf(data);
   if (!refid) return send.deny();
   if (refid.startsWith("X")) return send.object(ok()); // a guest (ess: X + the 31-digit game session): nothing to keep
@@ -315,12 +326,12 @@ const usergamedata_send: EPR = async (info, data, send) => {
     const prev = name === "RDAT01" || name in SONG_RECORDS ? await find(data, name) : undefined;
     derive(doc, name, bin, build, mark.sensor, shop, prev);
     if (hook && name in SONG_RECORDS && doc.songs?.length) { // the stored records are still the ones before this save: the #1 to beat
-      const rows = await DB.Find<Rec>(null, { collection: "record", name } as any);
+      const rows = await DB.Find<Rec>(null, { collection: "record", rec: name } as any);
       for (const e of doc.songs) if (e.score > 0) { const top = chartTop(rows, build || "", e.row, e.diff); if (!top || beats(e, top.e)) firsts.push({ e, top }); }
     }
     if (name === "RDAT01") await keepEventPlays(refid, build, (doc.history || []).filter((e) => !(prev?.history || []).some((p: any) => samePlay(p, e))));
     log("send", refid, name, "bin1 bytes", bin ? Buffer.from(bin, "base64").length : 0);
-    await DB.Upsert<Rec>(refid, { collection: "record", dataid: dataidOf(data), name }, { $set: doc } as any);
+    await DB.Upsert<Rec>(refid, { collection: "record", dataid: dataidOf(data), rec: name }, { $set: doc } as any);
   }
   if (hook && firsts.length) { // only a new server #1; never a personal best
     const player = sjis(d01 ? d01.split(",")[3 + 24] : colsOf(((await find(data, "DATA01"))?.tail as string) || "")[1 + 24]) || "A player";
@@ -343,6 +354,7 @@ const usergamedata_send: EPR = async (info, data, send) => {
 
 // `recv_csv` is `NAME,mask,NAME,mask,...`: one answer per name, in order; a name never saved is `<NODATA>`
 const usergamedata_recv: EPR = async (info, data, send) => {
+  await ready;
   const names = $(data).str("data.recv_csv", "").split(",").filter((_, i) => i % 2 === 0 && _);
   const d = [];
   let found = 0;
@@ -422,6 +434,17 @@ function schedule(now: number) {
   return out;
 }
 
+// The core's own Profiles list names a card by the `name` of the first plugin document of that card that has one, so only DATA01 has a `name`
+// (the player's) and every record's own name is `rec`. A database saved before kept the record's name in `name`: moved once, at the start.
+async function renameField() {
+  for (const r of await DB.Find<any>(null, { collection: "record", rec: { $exists: false } } as any)) {
+    const q = { collection: "record", dataid: r.dataid, name: r.name, rec: { $exists: false } };
+    if (r.name === "DATA01") await DB.Update(r.__refid, q as any, { $set: { rec: r.name, name: sjis(colsOf(r.tail)[1 + 24]) } } as any);
+    else await DB.Update(r.__refid, q as any, { $set: { rec: r.name }, $unset: { name: true } } as any);
+  }
+}
+let ready: Promise<unknown> = Promise.resolve(); // the start's writes; a call waits for them (the moved field above)
+
 export function register() {
   R.GameCode("KDM");
   R.Contributor("Cris-Oblea", "https://github.com/Cris-Oblea/asphyxia-deac"); // the public repo, on the WebUI's About page
@@ -435,9 +458,9 @@ export function register() {
   // a WebUI page cannot read the options (U.GetConfig answers undefined there), so the key is copied where its page can: the plugin's own space, at the core's start
   // what the pages derive when drawn (the romanised titles, the song total per build): the plugin's tables, copied where a page can read them
   // one document and one after the other: two writes at the core's start made its database fail to load
-  DB.Upsert({ collection: "settings" }, { $set: { backup_key: String(U.GetConfig("backup_key") || "") } } as any).then(() =>
+  ready = DB.Upsert({ collection: "settings" }, { $set: { backup_key: String(U.GetConfig("backup_key") || "") } } as any).then(() =>
     DB.Upsert({ collection: "songtable" }, { $set: { builds: Object.fromEntries(Object.keys(SONGS).map((b) => [b, { total: SONG_COUNT_ALL[b], rom: Object.fromEntries(SONGS[b].filter((r) => r[3]).map((r) => [r[0], r[3]])) }])) } } as any)).then(() =>
-    DB.Upsert({ collection: "schedule" }, { $set: { weeks: schedule(Date.now()) } } as any));
+    DB.Upsert({ collection: "schedule" }, { $set: { weeks: schedule(Date.now()) } } as any)).then(renameField);
   R.Config("server_name", { name: "Server name", desc: "The name in the footer of the Discord posts. Empty: DEAC.", type: "string", default: "" });
   R.Config("discord_webhook", { name: "Discord webhook URL", desc: "A Discord webhook: a message only when a save makes a new server #1 of a song and difficulty (a first score counts; never a personal best), in the form of a score channel's posts. No message for a guest. Empty: off.", type: "string", default: "" });
   R.Config("discord_close_post", { name: "Discord: post the week's close", desc: "With the webhook set, also post a closed week's champions and the next week's songs. Default off.", type: "boolean", default: false });
@@ -449,6 +472,7 @@ export function register() {
   // the card becomes the profile of a file (readProfile checks all of it first; nothing is touched when it is refused). A WebUI event answers
   // the page no data (the core redirects), so the outcome is kept in the plugin's `import` document for the page to show after its reload
   R.WebUIEvent("importRecords", async ({ refid, file }: { refid: string; file: any }) => {
+    await ready;
     if (!refid || typeof refid !== "string" || refid.startsWith("X")) return;
     const got = readProfile(file, refid);
     const note = { time: Date.now(), error: "", records: 0 };
@@ -457,8 +481,8 @@ export function register() {
       await DB.Remove(refid, { collection: "record" });
       await DB.Remove(refid, { collection: "eplay" }); // the card becomes the file's profile: its event plays are the file's history's
       for (const doc of got.docs) {
-        await DB.Upsert<Rec>(refid, { collection: "record", dataid: doc.dataid, name: doc.name }, { $set: doc } as any);
-        if (doc.name === "RDAT01") await keepEventPlays(refid, doc.build || "", doc.history || []);
+        await DB.Upsert<Rec>(refid, { collection: "record", dataid: doc.dataid, rec: doc.rec }, { $set: doc } as any);
+        if (doc.rec === "RDAT01") await keepEventPlays(refid, doc.build || "", doc.history || []);
       }
       note.records = got.docs.length;
     }
@@ -469,8 +493,18 @@ export function register() {
     if (!refid) return;
     const ids: string[] = [];
     for (const id of Array.isArray(rivals) ? rivals : []) // another card with a profile on this server, once each, at most 8
-      if (typeof id === "string" && id !== refid && !ids.includes(id) && ids.length < 8 && (await DB.FindOne(id, { collection: "record", name: "DATA01" }))) ids.push(id);
+      if (typeof id === "string" && id !== refid && !ids.includes(id) && ids.length < 8 && (await DB.FindOne(id, { collection: "record", rec: "DATA01" }))) ids.push(id);
     await DB.Upsert(refid, { collection: "rivals" }, { $set: { ids } } as any);
+  });
+  // a new name for the card, any number of times: DATA01's column 24, which the game loads at the next card-in; refused names leave it as it was
+  R.WebUIEvent("renameProfile", async ({ refid, name }: { refid: string; name: string }) => {
+    await ready;
+    const sj = nameBytes(name);
+    const r = refid && sj ? await DB.FindOne<Rec>(refid, { collection: "record", rec: "DATA01" }) : null;
+    const t = r ? Buffer.from(r.tail, "base64").toString("latin1").split(",") : [];
+    if (!r || t.length < 1 + 24 + 2) return;
+    t[1 + 24] = sj;
+    await DB.Update<Rec>(refid, { collection: "record", rec: "DATA01" }, { $set: { tail: Buffer.from(t.join(","), "latin1").toString("base64"), name: sjis(sj) } } as any);
   });
   R.Route("playerdata.usergamedata_send", usergamedata_send);
   R.Route("playerdata.usergamedata_recv", usergamedata_recv);

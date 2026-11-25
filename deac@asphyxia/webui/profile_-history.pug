@@ -41,7 +41,7 @@
     var by = {};
     records.forEach(function (r) {
       var id = r.__refid, e = by[id] || (by[id] = { refid: id, p: profileOf(null), songs: [] });
-      if (r.name === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
+      if (r.rec === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
       (r.songs || []).forEach(function (s) { if (!only || (s.sensor || "other") === only) e.songs.push(s); });
     });
     Object.keys(by).forEach(function (id) {
@@ -71,7 +71,7 @@
 //- helpers:end
 
 -
-  var rdat = records.filter(function (r) { return r.name === "RDAT01"; })[0];
+  var rdat = records.filter(function (r) { return r.rec === "RDAT01"; })[0];
   var plays = (rdat && rdat.history) || [];
 
 .card
@@ -84,7 +84,7 @@
     if !plays.length
       p.has-text-grey-light No play yet: the game has not saved a credit for this card.
     else
-      p.has-text-grey-light The card's last 16 plays, newest first, as the game keeps them in its own history record. Result is the game's mark for that play (Failed, Clear, or Full combo with no BOO; a star when every note was hit, gold when every note was PERFECT). The time is the game's e-amusement clock, in UTC. The shop and the sensor are the ones of the machine that saved the play (the launcher tells the server; an honour label).
+      p.has-text-grey-light The card's last 16 plays, newest first, as the game keeps them in its own history record. Result is the game's mark for that play (Failed, Clear, or Full combo with no BOO; a star when every note was hit, gold when every note was PERFECT). The time is the game's e-amusement clock, in UTC. The sensor is the one of the machine that saved the play (the launcher tells the server; an honour label).
       table.table.is-fullwidth.is-hoverable.is-striped
         thead
           tr
@@ -95,7 +95,6 @@
             th Grade
             th Result
             th Max combo
-            th Shop
             th Sensor
         tbody
           each p in plays
@@ -108,5 +107,4 @@
               td= p.grade
               td= p.grade === "-" ? "Failed" : markOf({ grade: p.grade, clear: p.clear, plays: 1 })
               td= p.combo
-              td= sjis(p.shop) || "-"
               td= SENSORS[p.sensor || "other"]

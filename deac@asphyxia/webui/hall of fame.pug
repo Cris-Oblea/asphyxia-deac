@@ -1,6 +1,7 @@
 //DATA//
   tables: DB.Find({ collection: 'songtable' })
   halls: DB.Find({ collection: 'hall' })
+  records: DB.Find(null, { collection: 'record', rec: 'DATA01' })
 
 //- helpers:begin
 -
@@ -41,7 +42,7 @@
     var by = {};
     records.forEach(function (r) {
       var id = r.__refid, e = by[id] || (by[id] = { refid: id, p: profileOf(null), songs: [] });
-      if (r.name === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
+      if (r.rec === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
       (r.songs || []).forEach(function (s) { if (!only || (s.sensor || "other") === only) e.songs.push(s); });
     });
     Object.keys(by).forEach(function (id) {
@@ -74,6 +75,8 @@
   // every closed week, newest first, with the podium the plugin recorded when it closed (never worked out again); a week with no winners is not listed
   var VIEWS = [["All scores", "all"], ["Kinect scores only", "kinect"], ["Camera scores only", "camera"]];
   var PLACES = ["", "1st", "2nd", "3rd"];
+  // a winner shows the card's name now; a card deleted since shows the name it had at the close
+  var now = playersOf(records), shown = function (r) { return (now[r.refid] && now[r.refid].p.name) || r.name; };
   var list = halls.filter(function (h) { return h.overall.length || VIEWS.some(function (v) { return h.views[v[1]].length; }); }).sort(function (a, b) { return b.id - a.id; });
 
 if !list.length
@@ -117,7 +120,7 @@ each h in list
                   tr
                     td= PLACES[r.place]
                     td
-                      a(href="profile?refid=" + r.refid)= r.name
+                      a(href="profile?refid=" + r.refid)= shown(r)
                     td
                       strong= fmt(r.score)
                     td= r.grade
@@ -135,7 +138,7 @@ each h in list
               tr
                 td= PLACES[r.place]
                 td
-                  a(href="profile?refid=" + r.refid)= r.name
+                  a(href="profile?refid=" + r.refid)= shown(r)
                 td
                   strong= fmt(r.score)
 

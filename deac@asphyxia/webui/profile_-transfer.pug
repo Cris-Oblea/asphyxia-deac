@@ -42,7 +42,7 @@
     var by = {};
     records.forEach(function (r) {
       var id = r.__refid, e = by[id] || (by[id] = { refid: id, p: profileOf(null), songs: [] });
-      if (r.name === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
+      if (r.rec === "DATA01") { e.p = profileOf(r); e.sensor = r.sensor || "other"; e.songlist = r.songlist || "other"; e.songtotal = TOTALS[r.build] || 0; }
       (r.songs || []).forEach(function (s) { if (!only || (s.sensor || "other") === only) e.songs.push(s); });
     });
     Object.keys(by).forEach(function (id) {
@@ -75,8 +75,8 @@
   // the profile file: the card's records as stored, plus the sensor / shop tags the WebUI shows (the rest is derived again on import)
   var me = playersOf(records)[refid];
   var note = notes && notes[0];
-  var file = { format: 'deac-profile', version: 1, refid: refid, exported: new Date().toISOString(), records: records.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; }).map(function (r) {
-    var o = { name: r.name, dataid: r.dataid, tail: r.tail, bin: r.bin || '', build: r.build || '', sensor: r.sensor, songlist: r.songlist };
+  var file = { format: 'deac-profile', version: 1, refid: refid, exported: new Date().toISOString(), records: records.slice().sort(function (a, b) { return a.rec < b.rec ? -1 : 1; }).map(function (r) {
+    var o = { name: r.rec, dataid: r.dataid, tail: r.tail, bin: r.bin || '', build: r.build || '', sensor: r.sensor, songlist: r.songlist };
     if (r.songs) o.songs = r.songs.map(function (s) { return [s.row, s.diff, s.score, s.sensor]; });
     if (r.history) o.history = r.history.map(function (h) { return [h.time, h.score, h.row, h.sensor, h.shop]; });
     return o;
@@ -90,7 +90,7 @@
         i.mdi.mdi-database-export
       | &nbsp;Export this profile
   .card-content
-    if !me || !records.some(function (r) { return r.name === "DATA01"; })
+    if !me || !records.some(function (r) { return r.rec === "DATA01"; })
       p.has-text-grey-light No records yet: the game has not saved a credit for this card.
     else
       p.has-text-grey-light #{records.length} records (the profile, every score, the play history) as one file. Import it into another card, or into another server running this plugin, to carry the profile over.
